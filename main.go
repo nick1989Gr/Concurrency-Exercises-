@@ -1,11 +1,3 @@
-// During a busy hackaton 3D printers are heavily used. Write a simulation of hackers trying to access 3D printers.
-
-// In the hackerspace, there are 3 3D printers. There are 7 hackers that are interested in using the printers.
-
-// If the hacker can't access the printer for more than 5 seconds,
-//he gets annoyed and quits the hackaton. Hackers use printers for random interval
-//from 1 to 10 seconds and usually they need to use the printer at least twice, because nothing is perfect for the first time.
-
 package main
 
 import (
@@ -15,19 +7,24 @@ import (
 	"time"
 )
 
+const (
+	NUMBER_OF_HACKERS  = 7
+	NUMBER_OF_PRINTERS = 3
+)
+
 func main() {
 
 	printersCh := make(chan hacker)
-	terminate := make(chan struct{}, 3)
-	freeUser := make(chan struct{}, 3)
-	// hackersCh := make(chan int, 7)
+	terminate := make(chan struct{}, NUMBER_OF_PRINTERS)
+	freePrinter := make(chan struct{}, NUMBER_OF_PRINTERS)
+
 	hackers := []hacker{
 		{id: 0}, {id: 1}, {id: 2}, {id: 3}, {id: 4}, {id: 5}, {id: 6},
 	}
 	var wgHackers sync.WaitGroup
 	var wgPrinters sync.WaitGroup
-	wgPrinters.Add(3)
-	for i := 0; i < 3; i++ {
+	wgPrinters.Add(NUMBER_OF_PRINTERS)
+	for i := 0; i < NUMBER_OF_PRINTERS; i++ {
 
 		go func() {
 			defer wgPrinters.Done()
@@ -35,8 +32,8 @@ func main() {
 				select {
 				case h := <-printersCh:
 					h.using = true
-					fmt.Printf("Hacker %v is using the printer\n", h)
-					<-freeUser
+					fmt.Printf("Hacker %v is using the printer\n", h.id)
+					<-freePrinter
 				case <-terminate:
 					fmt.Println("Printer is terminating")
 					return
@@ -47,8 +44,8 @@ func main() {
 		}()
 	}
 
-	wgHackers.Add(7)
-	for i := 0; i < 7; i++ {
+	wgHackers.Add(NUMBER_OF_HACKERS)
+	for i := 0; i < NUMBER_OF_HACKERS; i++ {
 		i := i
 		go func() {
 			defer wgHackers.Done()
@@ -66,7 +63,7 @@ func main() {
 					fmt.Printf("Hacker %v releasing a printer\n", hackers[i].id)
 
 					hackers[i].using = false
-					freeUser <- struct{}{}
+					freePrinter <- struct{}{}
 					if hackers[i].timesUsed == 2 {
 						fmt.Printf("Hacker with id : %v has used the printer 2 times\n", hackers[i].id)
 						return
@@ -83,7 +80,7 @@ func main() {
 	}
 
 	wgHackers.Wait()
-	for i := 0; i < 3; i++ {
+	for i := 0; i < NUMBER_OF_PRINTERS; i++ {
 		terminate <- struct{}{}
 	}
 	wgPrinters.Wait()
