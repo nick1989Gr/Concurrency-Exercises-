@@ -2,101 +2,78 @@ package main
 
 import (
 	"fmt"
-	"math/rand"
+	"math/rand/v2"
 	"sync"
 	"time"
 )
 
-const (
-	NUMBER_OF_HACKERS  = 7
-	NUMBER_OF_PRINTERS = 3
-)
-
 func main() {
-
-	printersCh := make(chan hacker)
-	terminate := make(chan struct{}, NUMBER_OF_PRINTERS)
-	freePrinter := make(chan struct{}, NUMBER_OF_PRINTERS)
-
-	hackers := []hacker{
-		{id: 0}, {id: 1}, {id: 2}, {id: 3}, {id: 4}, {id: 5}, {id: 6},
+	numPrinters := 3
+	numhackers := 7
+	hackers := make([]*hacker, numhackers)
+	for i := range numhackers {
+		hackers[i] = newHacker(i)
 	}
-	var wgHackers sync.WaitGroup
-	var wgPrinters sync.WaitGroup
-	wgPrinters.Add(NUMBER_OF_PRINTERS)
-	for i := 0; i < NUMBER_OF_PRINTERS; i++ {
 
-		go func() {
-			defer wgPrinters.Done()
-			for {
-				select {
-				case h := <-printersCh:
-					h.using = true
-					fmt.Printf("Hacker %v is using the printer\n", h.id)
-					<-freePrinter
-				case <-terminate:
-					fmt.Println("Printer is terminating")
-					return
-				}
+	printers := make(chan struct{}, numPrinters)
 
+	var wg sync.WaitGroup
+	for i := range numhackers {
+		wg.Add(1)
+		go hackerFun(&wg, hackers[i], printers)
+	}
+
+	wg.Wait()
+
+}
+
+func hackerFun(wg *sync.WaitGroup, h *hacker, printer chan struct{}) {
+	defer wg.Done()
+	ticker := time.NewTicker(5 * time.Second)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case printer <- struct{}{}:
+			h.currentUsage++
+			fmt.Printf("hacker %d on his %d usage , target %d\n", h.id, h.currentUsage, h.goalUsage)
+			t := usePrinterTime()
+			time.Sleep(t)
+			// release printer
+			<-printer
+			// check if hacker is done
+			ticker.Reset(5 * time.Second)
+			if h.goalUsage == h.currentUsage {
+				fmt.Printf("hacker %d finished with total %d usages\n", h.id, h.goalUsage)
+				return
 			}
-
-		}()
+		case <-ticker.C:
+			fmt.Printf("hacker %d gave up\n", h.id)
+			return
+		}
 	}
-
-	wgHackers.Add(NUMBER_OF_HACKERS)
-	for i := 0; i < NUMBER_OF_HACKERS; i++ {
-		i := i
-		go func() {
-			defer wgHackers.Done()
-			for {
-				select {
-				// case that our request goes through
-				case printersCh <- hackers[i]:
-					requestedTime := getUseTime()
-					hackers[i].timesUsed += 1
-					fmt.Printf("Hacker with id : %v has requests %v seconds time: %v\n", hackers[i].id, requestedTime, hackers[i].timesUsed)
-					t := time.NewTimer(time.Duration(requestedTime) * time.Second)
-					// Block until the timer is triggered
-					<-t.C
-					// Now we can release one printer
-					fmt.Printf("Hacker %v releasing a printer\n", hackers[i].id)
-
-					hackers[i].using = false
-					freePrinter <- struct{}{}
-					if hackers[i].timesUsed == 2 {
-						fmt.Printf("Hacker with id : %v has used the printer 2 times\n", hackers[i].id)
-						return
-					}
-				case <-time.After(5 * time.Second):
-					if !hackers[i].using {
-						fmt.Printf("Hacker with id : %v quited\n", hackers[i].id)
-						return
-					}
-				}
-			}
-
-		}()
-	}
-
-	wgHackers.Wait()
-	for i := 0; i < NUMBER_OF_PRINTERS; i++ {
-		terminate <- struct{}{}
-	}
-	wgPrinters.Wait()
 
 }
 
 type hacker struct {
-	timesUsed int
-	id        int
-	using     bool
+	id           int
+	currentUsage int
+	goalUsage    int
 }
 
-func getUseTime() int {
-	rand.Seed(time.Now().UnixNano())
-	min := 1
-	max := 10
-	return rand.Intn(max-min+1) + min
+func newHacker(id int) *hacker {
+	return &hacker{
+		id:           id,
+		currentUsage: 0,
+		goalUsage:    hackerNumberOfUses(),
+	}
+}
 
+func hackerNumberOfUses() int {
+	number := 2 + rand.IntN(2)
+	return number
+}
+
+func usePrinterTime() time.Duration {
+	return time.Duration(1+rand.IntN(10)) * time.Second // 1..10s
 }
